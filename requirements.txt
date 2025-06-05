@@ -1,0 +1,7 @@
+dlt[filesystem]>=0.3.0
+dlt[bigquery]>=0.3.0
+requests>=2.31.0
+functions-framework>=3.4.0
+google-cloud-storage>=2.13.0
+google-cloud-bigquery>=3.17.0
+google-cloud-secret-manager>=2.18.0 

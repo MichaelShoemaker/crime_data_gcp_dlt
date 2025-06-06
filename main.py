@@ -1,12 +1,13 @@
 import dlt
 import requests
 import json
-from datetime import datetime, UTC
+from datetime import datetime, UTC, timedelta
 from typing import Dict, Any, Iterator
 import functions_framework
 from google.cloud import secretmanager
 import os
 import logging
+import gc
 
 # Set up logging
 logging.basicConfig(level=logging.INFO)
@@ -14,7 +15,7 @@ logger = logging.getLogger(__name__)
 
 # Constants
 CHICAGO_CRIME_API_URL = "https://data.cityofchicago.org/resource/ijzp-q8t2.json"
-BATCH_SIZE = 500  # Reduced batch size for lower memory usage
+BATCH_SIZE = 50  # Reduced batch size for lower memory usage
 PROJECT_ID = os.environ.get('GOOGLE_CLOUD_PROJECT')
 SECRET_ID = 'chicago-data-portal-token'  # Name of your secret in Secret Manager (stores the App Token)
 
@@ -81,11 +82,16 @@ def fetch_crime_data(offset: int = 0, limit: int = BATCH_SIZE) -> Iterator[Dict[
     Fetch crime data from Chicago Data Portal API with pagination
     """
     try:
-        logger.info(f"Fetching crime data with offset {offset} and limit {limit}")
+        # Calculate timestamp for 24 hours ago
+        yesterday = datetime.now(UTC) - timedelta(days=1)
+        yesterday_str = yesterday.strftime('%Y-%m-%dT%H:%M:%S.000')
+        
+        logger.info(f"Fetching crime data updated since {yesterday_str}")
         params = {
             '$limit': limit,
             '$offset': offset,
-            '$order': 'updated_on DESC'  # Order by updated_on to get most recent changes first
+            '$order': 'updated_on DESC',  # Order by updated_on to get most recent changes first
+            '$where': f"updated_on >= '{yesterday_str}'"  # Filter for records updated in last 24 hours
         }
         
         response = requests.get(
@@ -120,37 +126,51 @@ def crime_data_loader(request):
 
         offset = 0
         total_records = 0
+        last_load_info = None
         
         while True:
             # Process records in smaller batches
             batch = []
+            batch_size = 0
+            
             for record in fetch_crime_data(offset=offset):
                 batch.append(record)
-                if len(batch) >= BATCH_SIZE:
+                batch_size += 1
+                if batch_size >= BATCH_SIZE:
                     break
             
             if not batch:
+                logger.info("No more records to process")
                 break
                 
             # Load data using DLT
             logger.info(f"Loading batch of {len(batch)} records")
-            load_info = pipeline.run(
-                batch,
-                table_name='crimes'
-            )
-            
-            total_records += len(batch)
-            offset += len(batch)
-            
-            # If we got fewer records than the batch size, we've reached the end
-            if len(batch) < BATCH_SIZE:
-                break
+            try:
+                # Load the current batch
+                last_load_info = pipeline.run(
+                    batch,
+                    table_name='crimes'
+                )
+                total_records += len(batch)
+                offset += len(batch)
+                
+                # Force garbage collection after each batch
+                del batch
+                gc.collect()
+                
+                # If we got fewer records than the batch size, we've reached the end
+                if batch_size < BATCH_SIZE:
+                    logger.info("Reached end of data")
+                    break
+            except Exception as e:
+                logger.error(f"Error loading batch: {str(e)}")
+                raise
 
         logger.info(f"Successfully processed {total_records} records")
         return {
             'status': 'success',
             'message': f'Successfully processed {total_records} records',
-            'load_info': load_info
+            'load_info': last_load_info
         }
 
     except Exception as e:

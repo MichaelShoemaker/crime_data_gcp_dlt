@@ -82,16 +82,16 @@ def fetch_crime_data(offset: int = 0, limit: int = BATCH_SIZE) -> Iterator[Dict[
     Fetch crime data from Chicago Data Portal API with pagination
     """
     try:
-        # Calculate timestamp for 24 hours ago
-        yesterday = datetime.now(UTC) - timedelta(days=1)
-        yesterday_str = yesterday.strftime('%Y-%m-%dT%H:%M:%S.000')
+        # Calculate timestamp for 7 days ago
+        seven_days_ago = datetime.now(UTC) - timedelta(days=7)
+        seven_days_ago_str = seven_days_ago.strftime('%Y-%m-%dT%H:%M:%S.000')
         
-        logger.info(f"Fetching crime data updated since {yesterday_str}")
+        logger.info(f"Fetching crime data updated since {seven_days_ago_str}")
         params = {
             '$limit': limit,
             '$offset': offset,
             '$order': 'updated_on DESC',  # Order by updated_on to get most recent changes first
-            '$where': f"updated_on >= '{yesterday_str}'"  # Filter for records updated in last 24 hours
+            '$where': f"updated_on >= '{seven_days_ago_str}'"  # Filter for records updated in last 7 days
         }
         
         response = requests.get(
@@ -119,7 +119,7 @@ def crime_data_loader(request):
         
         # Initialize DLT pipeline with BigQuery destination
         pipeline = dlt.pipeline(
-            pipeline_name='chicago_crime',
+            pipeline_name='chicago_crime_v2',  # New pipeline name to start fresh
             destination='bigquery',
             dataset_name='crime_data'
         )

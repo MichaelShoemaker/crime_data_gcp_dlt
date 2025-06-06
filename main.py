@@ -82,16 +82,15 @@ def fetch_crime_data(offset: int = 0, limit: int = BATCH_SIZE) -> Iterator[Dict[
     Fetch crime data from Chicago Data Portal API with pagination
     """
     try:
-        # Calculate timestamp for 7 days ago
-        seven_days_ago = datetime.now(UTC) - timedelta(days=7)
-        seven_days_ago_str = seven_days_ago.strftime('%Y-%m-%dT%H:%M:%S.000')
+        # Set the date filter to January 1st, 2025
+        start_date = "2025-01-01T00:00:00.000"
         
-        logger.info(f"Fetching crime data updated since {seven_days_ago_str}")
+        logger.info(f"Fetching crime data from {start_date}")
         params = {
             '$limit': limit,
             '$offset': offset,
-            '$order': 'updated_on DESC',  # Order by updated_on to get most recent changes first
-            '$where': f"updated_on >= '{seven_days_ago_str}'"  # Filter for records updated in last 7 days
+            '$order': 'date DESC',  # Order by date to get most recent records first
+            '$where': f"date >= '{start_date}'"  # Filter for records from 2025 onwards
         }
         
         response = requests.get(
